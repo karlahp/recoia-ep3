@@ -1,0 +1,22 @@
+{
+  "modelo": "ALS (implicit 0.7.3)",
+  "hiperparametros": {
+    "factores": 64,
+    "regularizacion": 0.05,
+    "iteraciones": 20,
+    "alpha": 20
+  },
+  "usuarios_evaluados": 954,
+  "ALS": {
+    "precision@10": 0.028092243186582815,
+    "recall@10": 0.07227728013891535,
+    "ndcg@10": 0.05261394580765509,
+    "f1@10": 0.0381045030087517
+  },
+  "popularidad": {
+    "precision@10": 0.024318658280922435,
+    "recall@10": 0.05715870141970771,
+    "ndcg@10": 0.03965375021346486,
+    "f1@10": 0.03246867572811456
+  }
+}
