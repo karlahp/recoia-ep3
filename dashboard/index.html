@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecoIA · Dashboard</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:900px;margin:24px auto;padding:0 16px;background:#f6f7fb;color:#1f2430}
+ h1{font-size:1.4rem}
+ .card{background:#fff;border-radius:10px;padding:16px;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+ label{display:inline-block;margin:0 12px 8px 0;font-size:.85rem}
+ input{padding:6px;border:1px solid #ccd;border-radius:6px}
+ button{padding:8px 14px;border:0;border-radius:6px;background:#3b5bdb;color:#fff;cursor:pointer;margin-right:6px}
+ table{width:100%;border-collapse:collapse}
+ th,td{text-align:left;padding:6px;border-bottom:1px solid #eee}
+ .barra{background:#e7ebff;border-radius:4px;height:18px}
+ .barra>div{background:#3b5bdb;height:100%;border-radius:4px}
+ .err{color:#b00020}
+ .chip{display:inline-block;padding:2px 10px;border-radius:10px;background:#eef;font-size:.8rem}
+ pre{background:#f0f1f5;padding:8px;border-radius:6px;overflow:auto}
+</style>
+</head>
+<body>
+<h1>RecoIA · Recomendaciones de productos</h1>
+
+<div class="card">
+  <label>API key <input id="key" type="password" size="30"></label>
+  <label>Usuario <input id="uid" type="number" min="0" value="0" style="width:90px"></label>
+  <label>Cantidad <input id="k" type="number" min="1" max="20" value="10" style="width:60px"></label><br>
+  <button onclick="consultar()">Recomendar</button>
+  <button onclick="verStats()" style="background:#555">Métricas del servicio</button>
+  <p id="msg" class="err"></p>
+</div>
+
+<div id="res" hidden>
+  <div class="card">
+    <span class="chip" id="modo"></span> <span class="chip" id="lat"></span>
+    <h3>¿Por qué se recomienda esto?</h3>
+    <p id="expl"></p><small id="fuente"></small>
+    <h3>Acción sugerida para el negocio</h3>
+    <p id="accion"></p>
+  </div>
+  <div class="card">
+    <h3>Productos recomendados</h3>
+    <table><thead><tr><th>#</th><th>Producto</th><th>Categoría</th><th>Puntaje</th></tr></thead>
+    <tbody id="tabla"></tbody></table>
+  </div>
+  <div class="card"><h3>Categorías en la recomendación</h3><div id="grafico"></div></div>
+</div>
+
+<div class="card" id="cardStats" hidden><h3>Métricas del servicio</h3><pre id="stats"></pre></div>
+
+<script>
+const $ = id => document.getElementById(id);
+function celda(tr, texto){ const td=document.createElement('td'); td.textContent=texto; tr.appendChild(td); }
+
+async function llamar(ruta, opciones){
+  const r = await fetch('/api'+ruta, opciones);
+  if(!r.ok){
+    const m={401:'API key inválida o ausente',422:'Datos inválidos: revisa usuario y cantidad',
+             429:'Demasiadas solicitudes: espera un minuto',503:'El servicio de recomendación no está disponible'};
+    throw new Error(m[r.status] || ('Error '+r.status));
+  }
+  return r.json();
+}
+
+async function consultar(){
+  $('msg').textContent='';
+  try{
+    const d = await llamar('/recommend',{method:'POST',
+      headers:{'Content-Type':'application/json','X-API-Key':$('key').value},
+      body:JSON.stringify({user_id:parseInt($('uid').value),k:parseInt($('k').value)})});
+    pintar(d);
+  }catch(e){ $('msg').textContent=e.message; $('res').hidden=true; }
+}
+
+function pintar(d){
+  $('res').hidden=false;
+  const cuerpo=$('tabla'); cuerpo.replaceChildren();
+  d.recomendaciones.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    celda(tr,i+1); celda(tr,'Producto '+r.item_id); celda(tr,r.categoria);
+    celda(tr,r.score==null?'—':r.score.toFixed(3)); cuerpo.appendChild(tr);
+  });
+  const cont={}; d.recomendaciones.forEach(r=>cont[r.categoria]=(cont[r.categoria]||0)+1);
+  const g=$('grafico'); g.replaceChildren();
+  Object.entries(cont).sort((a,b)=>b[1]-a[1]).forEach(([c,n])=>{
+    const f=document.createElement('div'); f.style.margin='6px 0';
+    const t=document.createElement('div'); t.textContent=c+' ('+n+')';
+    const b=document.createElement('div'); b.className='barra';
+    const i=document.createElement('div'); i.style.width=(100*n/d.recomendaciones.length)+'%';
+    b.appendChild(i); f.appendChild(t); f.appendChild(b); g.appendChild(f);
+  });
+  $('modo').textContent = d.fallback ? 'Usuario nuevo (más populares)' : 'Personalizado (modelo ALS)';
+  $('lat').textContent = d.latencia_ms+' ms';
+  $('expl').textContent = d.explicacion;
+  $('fuente').textContent = 'Fuente de la explicación: '+d.fuente_explicacion;
+  $('accion').textContent = d.accion_sugerida;
+}
+
+async function verStats(){
+  $('msg').textContent='';
+  try{
+    const s = await llamar('/stats',{headers:{'X-API-Key':$('key').value}});
+    $('stats').textContent = JSON.stringify(s,null,2); $('cardStats').hidden=false;
+  }catch(e){ $('msg').textContent=e.message; }
+}
+</script>
+</body>
+</html>
