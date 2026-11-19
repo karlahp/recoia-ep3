@@ -123,11 +123,12 @@ def explicar(user_id: int, items: tuple, fallback: bool):
         "No inventes datos que no estén aquí."
     )
     try:
-        body = {"anthropic_version": "bedrock-2023-05-31", "max_tokens": 200,
-                "messages": [{"role": "user", "content": prompt}]}
-        r = bedrock.invoke_model(modelId=BEDROCK_MODEL_ID, body=json.dumps(body),
-                                 contentType="application/json", accept="application/json")
-        texto = json.loads(r["body"].read())["content"][0]["text"].strip()
+        r = bedrock.converse(
+            modelId=BEDROCK_MODEL_ID,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": 200, "temperature": 0.3},
+        )
+        texto = r["output"]["message"]["content"][0]["text"].strip()
         STATS["bedrock_llamadas"] += 1
         _CACHE[clave] = texto
         return texto, "bedrock"
