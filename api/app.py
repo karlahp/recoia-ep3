@@ -22,6 +22,7 @@ BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240
 USAR_BEDROCK = os.getenv("USAR_BEDROCK", "true").lower() == "true"
 RATE_LIMIT = os.getenv("RATE_LIMIT", "30/minute")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "")
+REC_CACHE_TTL = int(os.getenv("REC_CACHE_TTL", "300"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("recoia")
@@ -37,12 +38,13 @@ PERFIL = {int(r["user_id"]): r for r in _leer("usuarios.csv")}
 
 # ---------- Clientes AWS ----------
 runtime = boto3.client("sagemaker-runtime", config=Config(
-    region_name=REGION, read_timeout=10, connect_timeout=3, retries={"max_attempts": 2}))
+    region_name=REGION, read_timeout=10, connect_timeout=3, retries={"max_attempts": 1}))
 bedrock = boto3.client("bedrock-runtime", config=Config(
     region_name=REGION, read_timeout=20, connect_timeout=3, retries={"max_attempts": 1}))
 
 STATS = Counter()
 _CACHE = {}
+_REC_CACHE = {}
 
 # ---------- Seguridad ----------
 def clave_ip(request: Request) -> str:
@@ -84,12 +86,24 @@ class Consulta(BaseModel):
 
 # ---------- Lógica ----------
 def invocar_endpoint(user_id: int, k: int) -> dict:
+    ahora = time.time()
+    clave = (user_id, k)
+    en_cache = _REC_CACHE.get(clave)
+    if en_cache and en_cache[0] > ahora:
+        STATS["rec_cache_aciertos"] += 1
+        return en_cache[1]
+
     r = runtime.invoke_endpoint(
         EndpointName=ENDPOINT_NAME,
         ContentType="application/json",
         Body=json.dumps({"user_id": user_id, "k": k}),
     )
-    return json.loads(r["Body"].read())
+    resultado = json.loads(r["Body"].read())
+    if REC_CACHE_TTL > 0:
+        if len(_REC_CACHE) >= 5000:
+            _REC_CACHE.clear()
+        _REC_CACHE[clave] = (ahora + REC_CACHE_TTL, resultado)
+    return resultado
 
 
 def explicar_reglas(perfil, recs, fallback):

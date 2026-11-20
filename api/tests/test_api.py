@@ -83,3 +83,26 @@ def test_11_explicacion_por_reglas_sin_bedrock(monkeypatch):
 def test_12_stats_requiere_api_key():
     assert cliente.get("/stats").status_code == 401
     assert cliente.get("/stats", headers=H).status_code == 200
+
+
+def test_13_cache_recomendaciones_reduce_llamadas_sagemaker(monkeypatch):
+    import io
+    import json
+    llamadas = {"n": 0}
+    modulo._REC_CACHE.clear()
+    modulo.STATS["rec_cache_aciertos"] = 0
+
+    def fake_invoke(**kwargs):
+        llamadas["n"] += 1
+        payload = json.dumps({
+            "user_id": 7, "fallback": False,
+            "recomendaciones": [{"item_id": 82, "score": 0.91}]
+        }).encode("utf-8")
+        return {"Body": io.BytesIO(payload)}
+
+    monkeypatch.setattr(modulo.runtime, "invoke_endpoint", fake_invoke)
+    r1 = cliente.post("/recommend", json={"user_id": 7, "k": 1}, headers=H)
+    r2 = cliente.post("/recommend", json={"user_id": 7, "k": 1}, headers=H)
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert llamadas["n"] == 1
+    assert modulo.STATS["rec_cache_aciertos"] == 1
