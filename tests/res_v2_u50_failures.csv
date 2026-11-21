@@ -1,0 +1,3 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+POST,/recommend (usuario nuevo),HTTPError('503 Server Error: Service Unavailable for url: /recommend (usuario nuevo)'),59,2026-11-21T01:17:12Z,2026-11-21T01:18:03Z
+POST,/recommend,HTTPError('503 Server Error: Service Unavailable for url: /recommend'),464,2026-11-21T01:17:04Z,2026-11-21T01:18:03Z
