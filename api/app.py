@@ -63,7 +63,7 @@ app = FastAPI(
     title="RecoIA API",
     version="1.0.0",
     description="Recomendaciones de productos (modelo ALS en SageMaker) con explicación "
-                "generada por Amazon Bedrock y acción sugerida para el negocio.",
+                "por reglas (Amazon Bedrock opcional si el rol tiene permiso) y acción sugerida para el negocio.",
     root_path="/api",
 )
 app.state.limiter = limiter
