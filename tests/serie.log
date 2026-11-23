@@ -1,0 +1,24 @@
+nohup: ignoring input
+== A: SIN caché ==
+ Container recoia-ep3-api-1  Recreate
+ Container recoia-ep3-api-1  Recreated
+ Container recoia-ep3-api-1  Starting
+ Container recoia-ep3-api-1  Started
+Calentando...
+A: 25 usuarios
+A: 50 usuarios
+== B: CON caché ==
+ Container recoia-ep3-api-1  Recreate
+ Container recoia-ep3-api-1  Recreated
+ Container recoia-ep3-api-1  Starting
+ Container recoia-ep3-api-1  Started
+Calentando...
+B: 50 usuarios
+B: 100 usuarios
+B: 200 usuarios
+Listo.
+ Container recoia-ep3-api-1  Recreate
+ Container recoia-ep3-api-1  Recreated
+ Container recoia-ep3-api-1  Starting
+ Container recoia-ep3-api-1  Started
+Configuración final restaurada.
