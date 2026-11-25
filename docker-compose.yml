@@ -28,6 +28,9 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-alpine
     profiles: ["bus"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
     restart: unless-stopped
 
   worker:
@@ -36,7 +39,7 @@ services:
     env_file: .env
     volumes:
       - ./worker:/app:ro
-    command: sh -c "pip install --no-cache-dir pika==1.3.2 && python /app/worker.py"
+    command: sh -c "pip install --no-cache-dir pika==1.3.2 boto3 && python /app/worker.py"
     depends_on:
       - rabbitmq
     restart: unless-stopped

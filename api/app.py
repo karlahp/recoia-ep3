@@ -1,6 +1,7 @@
 import csv
 import json
 import logging
+import threading
 import os
 import secrets
 import time
@@ -162,22 +163,43 @@ def accion_sugerida(recs, fallback):
     return "Intereses variados: mostrar un carrusel mixto y medir qué categoría genera más clics."
 
 
-def publicar_evento(evento: dict):
-    """Publica el evento en RabbitMQ si está configurado (no bloquea la respuesta)."""
-    if not RABBITMQ_URL:
-        return
-    try:
-        import pika
+_AMQP = {"conn": None, "ch": None}
+_AMQP_LOCK = threading.Lock()
+
+
+def _canal_amqp():
+    """Reutiliza una única conexión/canal a RabbitMQ (se reabre si se cayó)."""
+    import pika
+    conn, ch = _AMQP["conn"], _AMQP["ch"]
+    if conn is None or conn.is_closed or ch is None or ch.is_closed:
         conn = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
         ch = conn.channel()
         ch.queue_declare(queue="recomendaciones", durable=True)
-        ch.basic_publish(exchange="", routing_key="recomendaciones", body=json.dumps(evento),
-                         properties=pika.BasicProperties(delivery_mode=2))
-        conn.close()
-        STATS["eventos_publicados"] += 1
-    except Exception as e:
-        STATS["eventos_fallidos"] += 1
-        log.warning("No se pudo publicar el evento: %s", e)
+        _AMQP["conn"], _AMQP["ch"] = conn, ch
+    return ch
+
+
+def publicar_evento(evento: dict):
+    """Publica el evento en RabbitMQ si está configurado (no bloquea la respuesta).
+
+    Optimización: conexión persistente en vez de abrir/cerrar una por evento.
+    """
+    if not RABBITMQ_URL:
+        return
+    import pika
+    with _AMQP_LOCK:
+        for intento in (1, 2):
+            try:
+                _canal_amqp().basic_publish(
+                    exchange="", routing_key="recomendaciones", body=json.dumps(evento),
+                    properties=pika.BasicProperties(delivery_mode=2))
+                STATS["eventos_publicados"] += 1
+                return
+            except Exception as e:
+                _AMQP["conn"] = _AMQP["ch"] = None  # fuerza reconexión en el reintento
+                if intento == 2:
+                    STATS["eventos_fallidos"] += 1
+                    log.warning("No se pudo publicar el evento: %s", e)
 
 
 # ---------- Endpoints ----------

@@ -1,31 +1,31 @@
-import json
-import logging
-import os
-import time
-from collections import Counter
-import pika
+import hashlib, json, logging, os, time
+from datetime import datetime, timezone
+import boto3, pika
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [WORKER] %(levelname)s %(message)s")
 log = logging.getLogger("recoia-worker")
 
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-COLA = "recomendaciones"
+RABBITMQ_URL = os.environ["RABBITMQ_URL"]
+S3_BUCKET = os.environ["S3_BUCKET"]
+COLA, FLUSH_SECONDS, BATCH_SIZE = "recomendaciones", 10, 50
+s3 = boto3.client("s3")
+vistos, lote, ultimo_flush = set(), [], time.time()
+def clave_evento(e):
+    if e.get("event_id"):
+        return str(e["event_id"])
+    return hashlib.sha1(f"{e.get('user_id','')}|{e.get('ts','')}".encode()).hexdigest()
 
-
-def procesar_mensaje(ch, method, properties, body):
-    evento = json.loads(body.decode("utf-8"))
-    cats = evento.get("categorias", [])
-    top_cat = Counter(cats).most_common(1)[0][0] if cats else "N/A"
-    log.info(
-        "Evento recibido | user_id=%s | fallback=%s | items=%d | cat_principal=%s",
-        evento.get("user_id"),
-        evento.get("fallback"),
-        len(cats),
-        top_cat,
-    )
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-
-
+def flush_lote():
+    global lote, ultimo_flush
+    if not lote:
+        ultimo_flush = time.time()
+        return
+    now = datetime.now(timezone.utc)
+    key = f"clickstream/dt={now:%Y-%m-%d}/batch_{now:%Y%m%dT%H%M%SZ}_{int(time.time()*1000)}.jsonl"
+    body = "\n".join(json.dumps(e, ensure_ascii=False) for e in lote) + "\n"
+    s3.put_object(Bucket=S3_BUCKET, Key=key, Body=body.encode())
+    log.info("Lote archivado en s3://%s/%s (%d eventos)", S3_BUCKET, key, len(lote))
+    lote, ultimo_flush = [], time.time()
 def main():
     params = pika.URLParameters(RABBITMQ_URL)
     while True:
@@ -34,13 +34,23 @@ def main():
             ch = conn.channel()
             ch.queue_declare(queue=COLA, durable=True)
             ch.basic_qos(prefetch_count=1)
-            ch.basic_consume(queue=COLA, on_message_callback=procesar_mensaje)
             log.info("Conectado a RabbitMQ. Escuchando cola '%s'...", COLA)
-            ch.start_consuming()
-        except Exception as e:
-            log.warning("Esperando conexión con RabbitMQ (%s). Reintentando en 3s...", e)
+            for method, _, body in ch.consume(COLA, inactivity_timeout=2):
+                if method is not None:
+                    e = json.loads(body.decode())
+                    eid = clave_evento(e)
+                    if eid in vistos:
+                        log.info("Duplicado descartado | event_id=%s", eid)
+                    else:
+                        vistos.add(eid)
+                        lote.append(e)
+                        log.info("Evento aceptado | event_id=%s | lote=%d", eid, len(lote))
+                    ch.basic_ack(delivery_tag=method.delivery_tag)
+                if lote and (len(lote) >= BATCH_SIZE or time.time() - ultimo_flush >= FLUSH_SECONDS):
+                    flush_lote()
+        except Exception as ex:
+            log.warning("Reintentando en 3s: %s", ex)
             time.sleep(3)
-
 
 if __name__ == "__main__":
     main()
